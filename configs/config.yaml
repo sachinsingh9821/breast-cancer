@@ -20,6 +20,15 @@ paths:
 preprocess:
   stages: [index, splits, master, derive]
 
+# scripts/qc_preprocessing.py
+qc:
+  subdir: master_2048 # which preprocessed copy under data.processed_dir to check
+  n_images: 48        # random images (plus every image with a flagged mask)
+  cols: 8
+  rows: 3
+  tile_w: 200
+  tile_h: 330
+
 hydra:
   run:
     dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
