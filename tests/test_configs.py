@@ -29,3 +29,11 @@ def test_dataset_configs_compose(dataset):
 
 def test_baseline_experiment_overrides_resolution():
     assert _compose(["experiment=baseline"]).data.long_side == 512
+
+
+def test_cbis_master_and_derived_resolutions():
+    data = _compose().data
+    assert data.master_long_side == 2048
+    assert data.long_side in data.derived_long_sides
+    assert _compose(["experiment=baseline"]).data.long_side in data.derived_long_sides
+    assert max(data.derived_long_sides) <= data.master_long_side

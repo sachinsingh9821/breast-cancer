@@ -1,10 +1,43 @@
 name: cbis_ddsm
 raw_dir: ${paths.raw}/cbis_ddsm
+csv_dir: ${.raw_dir}/csv
+dicom_dir: ${.raw_dir}/dicom                       # junction to S:\cbis_ddsm\dicom on the dev machine
+series_manifest: ${.raw_dir}/series_manifest.json  # written by scripts/download_cbis_ddsm.py
+interim_dir: ${paths.interim}/cbis_ddsm            # index tables (abnormalities.csv, images.csv)
 processed_dir: ${paths.processed}/cbis_ddsm
-long_side: 1024        # whole-image models keep >=1024 px on the long side
-canonical_side: left   # flip every breast so it faces this side; original laterality is recorded
+
+# Master copy: preprocessed once from the DICOMs at this resolution (16-bit PNG). It replaces
+# the raw DICOMs, which may be deleted afterwards. Training resolutions are derived from it.
+master_long_side: 2048
+master_dir: ${.processed_dir}/master_${.master_long_side}
+derived_long_sides: [1024, 512]                     # cached copies made by the `derive` stage
+long_side: 1024                                    # resolution used for training (experiments override)
+image_dir: ${.processed_dir}/ls${.long_side}       # where training reads images of `long_side`
+canonical_side: left                               # chest wall ends up on this side; flips are recorded
+
+crop:
+  work_long_side: 1024        # segmentation runs on a downscaled copy
+  high_pct: 99.0              # percentile mapped to white before Otsu
+  border_trim_frac: 0.02      # band of each border ignored when segmenting
+  strip_scan_frac: 0.06       # border band searched for saturated scanner strips
+  strip_min_frac: 0.5         # strip must span this fraction of the image height/width
+  strip_level: 250            # 8-bit level counted as near-saturated
+  blur_ksize: 5
+  morph_ksize: 15
+  margin_frac: 0.01           # padding around the breast bounding box
+  zero_background: true       # zero film labels / strips that fall inside the crop box
+  background_dilate_px: 5
+
+intensity:                    # percentile window applied at load time (PNGs keep raw values)
+  low_pct: 0.5
+  high_pct: 99.5
+
+index:
+  hash_duplicates: true       # pixel-hash full images that share patient/side/view
+
 split:
-  val_frac: 0.15
-  test_frac: 0.15
-  group_col: patient_id
-  stratify_col: label
+  val_frac: 0.15              # of eligible official-train patients
+  seed: ${seed}
+  stratify: [label, abnormality_type]   # patient-level malignant label x mass/calc/both
+
+num_workers: 6                # parallel workers for preprocessing
