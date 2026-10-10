@@ -69,8 +69,33 @@ Training on Kaggle/Colab GPUs (T4/P100, ~16 GB). Use mixed precision (AMP), grad
 
 ## Current status
 - [ ] Phase 1: scaffold, data pipeline, splits, baseline
+  - [x] Scaffold (package, Hydra configs, tooling, CI, pre-commit)
+  - [x] CBIS-DDSM downloader (`scripts/download_cbis_ddsm.py`, resumable) + the four case CSVs in `data/raw/cbis_ddsm/csv/`
+  - [x] Data pipeline code, all tested on synthetic data and a fake CBIS download (69 tests):
+        `dicom_io`, `preprocessing` (crop, strip/label removal, image-based flip, resize),
+        `cbis_index` (CSV ↔ DICOM join by SeriesUID, masks by size, duplicate merge),
+        `splits` (official test kept, 31 overlap patients dropped, stratified patient-level val),
+        `pipeline` + `scripts/preprocess.py` (index → splits → master 2048 → derive 1024/512)
+  - [x] QC tooling: `scripts/qc_preprocessing.py` (stats, automatic edge-strip flag, 300-image review sample)
+        and `scripts/qc_verify.py` (blind second-reviewer check, agreement + Cohen's kappa)
+  - [ ] **CBIS-DDSM download in progress** (as of 2026-10-10 19:06: 1986/6775 series, 38.8/152.3 GB, 25.5%).
+        DICOMs go to `S:\cbis_ddsm\dicom` via a junction at `data/raw/cbis_ddsm/dicom`.
+        Runs detached in a restart loop (4 workers): tcia_utils' threaded download crashed the
+        interpreter twice (`Fatal Python error: PyEval_SaveThread` in ssl), and the loop resumes
+        after a crash. Progress: `Get-Content data\raw\cbis_ddsm\download.log -Tail 5`;
+        restarts: `data\raw\cbis_ddsm\download.restarts.log`; stop: `taskkill /PID (Get-Content data\raw\cbis_ddsm\download.pid) /T /F`.
+  - [ ] Full pipeline run, QC, labeling, verification (next steps below)
+  - [ ] Single-image baseline (EfficientNet-B0 @ 512) + `evaluation/metrics.py`
 - [ ] Phase 2: patch classifier → whole-image model
 - [ ] Phase 3: multi-view fusion, uncertainty, Grad-CAM
 - [ ] Phase 4: external validation, density subgroups, calibration
 - [ ] Phase 5: ONNX, FastAPI, Docker, Gradio demo, CI
 - [ ] Phase 6: README, model card, figures
+
+### Next steps (in order)
+1. **Confirm the download finished**: `download.log` ends with "All 6775 series downloaded." If it reports failed series, rerun the downloader (it retries only those).
+2. **Full pipeline run**: `python scripts/preprocess.py data=cbis_ddsm` (index with pixel-hash dedup of the 142 duplicate candidates → splits → master 2048 → derive 1024/512, about 10 min). Then check that `pytest -q` runs the real-splits leakage test (it is skipped until `data/processed/cbis_ddsm/splits.csv` exists), and commit `reports/cbis_ddsm_dropped_overlap_patients.csv`.
+3. **QC run**: `python scripts/qc_preprocessing.py data=cbis_ddsm` → `data/processed/cbis_ddsm/qc/master_2048/`.
+4. **Label the 300-image review sample** (Claude): fill `edge_strip` / `horizontal_line` (0/1) in `review_sample.csv` using the `review_XX.png` sheets and the criteria in `scripts/qc_verify.py`. Report each artifact's prevalence with a 95% CI and the automatic detector's precision/recall. If either artifact is above 5%, propose a fix (likely: lower `strip_min_frac` for top/bottom bands in the crop step, then rebuild master); otherwise document it in NOTES.
+5. **Blind verification set for the owner**: `python scripts/qc_verify.py qc.verify.mode=make` → 30 images in `verify_00..02.png` + blank `verify_sample.csv`. The owner labels them without opening `review_sample.csv`, then `python scripts/qc_verify.py qc.verify.mode=score` → `reports/qc_label_verification.json`. Review the disagreements together.
+6. Then: the single-image baseline (Phase 1, last item).
