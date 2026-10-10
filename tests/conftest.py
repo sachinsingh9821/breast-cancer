@@ -1,5 +1,6 @@
 """Shared fixtures: synthetic mammograms and DICOM files."""
 
+import json
 from pathlib import Path
 
 import cv2
@@ -90,3 +91,147 @@ def write_dicom(
 @pytest.fixture
 def mammogram() -> np.ndarray:
     return make_mammogram()
+
+
+MASS_COLS = (
+    "patient_id,breast_density,left or right breast,image view,abnormality id,abnormality type,"
+    "mass shape,mass margins,assessment,pathology,subtlety,image file path,"
+    "cropped image file path,ROI mask file path"
+)
+CALC_COLS = (
+    "patient_id,breast density,left or right breast,image view,abnormality id,abnormality type,"
+    "calc type,calc distribution,assessment,pathology,subtlety,image file path,"
+    "cropped image file path,ROI mask file path"
+)
+
+
+@pytest.fixture
+def fake_cbis(tmp_path):
+    """A miniature CBIS-DDSM download reproducing the real dataset's quirks.
+
+    * P_00001 LEFT CC appears under a Mass and a Calc subject with identical pixels (duplicate).
+      Its mass ROI series holds the mask under a wrong "cropped images" description and the
+      CSV's 00000N indices are swapped; its calc crop and mask are in separate series.
+    * P_00002 RIGHT MLO (calc test): ROI path has a trailing newline; chest wall on the right.
+    * P_00003 is in both the official train (LEFT CC) and test (LEFT MLO) sets.
+    * P_00004 LEFT CC / MLO and P_00005 RIGHT CC: ordinary train cases.
+    """
+    root = tmp_path / "cbis"
+    dicom, csv_dir = root / "dicom", root / "csv"
+    csv_dir.mkdir(parents=True)
+    manifest, rows = [], {k: [] for k in ("mass_train", "mass_test", "calc_train", "calc_test")}
+    counter = iter(range(1, 10_000))
+
+    def uid() -> str:
+        return f"1.2.3.{next(counter)}"
+
+    def series(subject: str, description: str, files: list[tuple[np.ndarray, str]]) -> str:
+        s = uid()
+        for i, (arr, desc) in enumerate(files, start=1):
+            write_dicom(dicom / s / f"1-{i}.dcm", arr, series_description=desc, patient_id=subject)
+        manifest.append(
+            {
+                "SeriesInstanceUID": s,
+                "StudyInstanceUID": uid(),
+                "PatientID": subject,
+                "SeriesDescription": description,
+                "ImageCount": len(files),
+            }
+        )
+        return s
+
+    def case(
+        table,
+        kind,
+        split,
+        pid,
+        side,
+        view,
+        abn_id,
+        pathology,
+        img,
+        chest="left",
+        separate_roi=False,
+        swap_desc=False,
+        trailing_newline=False,
+        full_uid=None,
+    ):
+        subj = (
+            f"{kind.capitalize()}-{'Training' if split == 'train' else 'Test'}_{pid}_{side}_{view}"
+        )
+        full_uid = full_uid or series(
+            subj, "full mammogram images", [(img, "full mammogram images")]
+        )
+        mask = lesion_mask(chest).astype(np.uint8)
+        crop = img[400:600, 100:300].copy()
+        roi_subj = f"{subj}_{abn_id}"
+        if separate_roi:
+            crop_uid = series(roi_subj, "cropped images", [(crop, "cropped images")])
+            mask_uid = series(roi_subj, "ROI mask images", [(mask, "ROI mask images")])
+            crop_file, mask_file = "000000.dcm", "000000.dcm"
+        else:
+            mask_desc = "cropped images" if swap_desc else "ROI mask images"
+            crop_uid = mask_uid = series(
+                roi_subj, "ROI mask images", [(mask, mask_desc), (crop, "cropped images")]
+            )
+            crop_file, mask_file = "000000.dcm", "000001.dcm"  # CSV index wrong on purpose
+        study = "9.9.9"
+        mask_path = f"{roi_subj}/{study}/{mask_uid}/{mask_file}" + (
+            "\n" if trailing_newline else ""
+        )
+        extra = "OVAL,CIRCUMSCRIBED" if kind == "mass" else "PLEOMORPHIC,CLUSTERED"
+        rows[table].append(
+            f"{pid},3,{side},{view},{abn_id},{kind},{extra},4,{pathology},3,"
+            f"{subj}/{study}/{full_uid}/000000.dcm,{roi_subj}/{study}/{crop_uid}/{crop_file},"
+            f'"{mask_path}"'
+        )
+        return full_uid
+
+    img = make_mammogram()
+    case(
+        "mass_train", "mass", "train", "P_00001", "LEFT", "CC", 1, "MALIGNANT", img, swap_desc=True
+    )
+    case(
+        "calc_train",
+        "calc",
+        "train",
+        "P_00001",
+        "LEFT",
+        "CC",
+        1,
+        "BENIGN",
+        img.copy(),
+        separate_roi=True,
+    )
+    case(
+        "calc_test",
+        "calc",
+        "test",
+        "P_00002",
+        "RIGHT",
+        "MLO",
+        1,
+        "BENIGN_WITHOUT_CALLBACK",
+        make_mammogram("right"),
+        chest="right",
+        trailing_newline=True,
+    )
+    case("mass_train", "mass", "train", "P_00003", "LEFT", "CC", 1, "BENIGN", make_mammogram())
+    case("mass_test", "mass", "test", "P_00003", "LEFT", "MLO", 1, "MALIGNANT", make_mammogram())
+    for view in ("CC", "MLO"):
+        case(
+            "mass_train", "mass", "train", "P_00004", "LEFT", view, 1, "MALIGNANT", make_mammogram()
+        )
+    case("calc_train", "calc", "train", "P_00005", "RIGHT", "CC", 1, "BENIGN", make_mammogram())
+
+    names = {
+        "mass_train": "mass_case_description_train_set.csv",
+        "mass_test": "mass_case_description_test_set.csv",
+        "calc_train": "calc_case_description_train_set.csv",
+        "calc_test": "calc_case_description_test_set.csv",
+    }
+    for table, name in names.items():
+        header = MASS_COLS if table.startswith("mass") else CALC_COLS
+        (csv_dir / name).write_text("\n".join([header, *rows[table]]) + "\n")
+    (root / "series_manifest.json").write_text(json.dumps(manifest))
+    return root
