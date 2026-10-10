@@ -1,0 +1,5 @@
+name: efficientnet_b0
+backbone: efficientnet_b0
+pretrained: true
+num_classes: 1
+drop_rate: 0.2

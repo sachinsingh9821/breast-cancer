@@ -1,0 +1,9 @@
+epochs: 20
+batch_size: 8
+grad_accum_steps: 4
+lr: 3.0e-4
+weight_decay: 1.0e-4
+amp: true
+num_workers: 2
+monitor: val_auc
+tracker: wandb   # wandb | mlflow | none

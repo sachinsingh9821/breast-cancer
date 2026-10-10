@@ -1,0 +1,6 @@
+# External validation set. Evaluated ONCE at the end — never used for selection or tuning.
+name: vindr
+raw_dir: ${paths.raw}/vindr_mammo
+processed_dir: ${paths.processed}/vindr_mammo
+long_side: 1024
+canonical_side: left

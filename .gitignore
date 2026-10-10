@@ -1,0 +1,36 @@
+# Data (tracked with DVC, never committed)
+data/**
+!data/**/
+!data/**/.gitkeep
+*.dcm
+*.dicom
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Experiment outputs
+outputs/
+multirun/
+wandb/
+mlruns/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Editors / OS
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db

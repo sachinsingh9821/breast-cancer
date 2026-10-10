@@ -1,0 +1,20 @@
+# Root Hydra config. Override groups on the CLI, e.g. `python scripts/train.py experiment=baseline`.
+defaults:
+  - data: cbis_ddsm
+  - model: efficientnet_b0
+  - train: default
+  - experiment: null
+  - _self_
+
+seed: 42
+project_name: breast-cancer
+paths:
+  root: ${hydra:runtime.cwd}
+  raw: ${paths.root}/data/raw
+  interim: ${paths.root}/data/interim
+  processed: ${paths.root}/data/processed
+  figures: ${paths.root}/reports/figures
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

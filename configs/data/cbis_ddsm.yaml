@@ -1,0 +1,10 @@
+name: cbis_ddsm
+raw_dir: ${paths.raw}/cbis_ddsm
+processed_dir: ${paths.processed}/cbis_ddsm
+long_side: 1024        # whole-image models keep >=1024 px on the long side
+canonical_side: left   # flip every breast so it faces this side; original laterality is recorded
+split:
+  val_frac: 0.15
+  test_frac: 0.15
+  group_col: patient_id
+  stratify_col: label
