@@ -117,3 +117,20 @@ def test_partial_download_marks_unavailable(fake_cbis, tmp_path):
     )
     assert not images.set_index("image_id").loc["P_00005_RIGHT_CC", "available"]
     assert pd.isna(abn.set_index("patient_id").loc["P_00005", "full_file"])
+
+
+def test_laterality_and_view_come_from_subject_id(fake_cbis):
+    cases = load_case_descriptions(fake_cbis / "csv")
+    parsed = cases["image_subject"].str.extract(r"_(P_\d+)_(LEFT|RIGHT)_(CC|MLO)$")
+    assert (cases["patient_id"] == parsed[0]).all()
+    assert (cases["laterality"] == parsed[1]).all()
+    assert (cases["view"] == parsed[2]).all()
+
+
+def test_csv_laterality_disagreeing_with_subject_id_raises(fake_cbis):
+    path = fake_cbis / "csv" / "calc_case_description_test_set.csv"
+    lines = path.read_text().splitlines()
+    lines[1] = lines[1].replace(",RIGHT,MLO,", ",LEFT,MLO,", 1)  # subject ID says RIGHT
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(ValueError, match="laterality disagrees with subject ID"):
+        load_case_descriptions(fake_cbis / "csv")

@@ -73,6 +73,7 @@ HEADER_COLUMNS = [
     "photometric",
     "header_laterality",
 ]
+SUBJECT_PATTERN = r"_(?P<patient_id>P_\d+)_(?P<laterality>LEFT|RIGHT)_(?P<view>CC|MLO)$"
 PATHOLOGY_RANK = {"BENIGN_WITHOUT_CALLBACK": 0, "BENIGN": 1, "MALIGNANT": 2}
 
 
@@ -110,8 +111,21 @@ def load_case_descriptions(csv_dir: str | Path) -> pd.DataFrame:
         cases[f"{col}_csv_path"] = path
         cases[f"{col}_subject"] = parts.str[0]
         cases[f"{col}_series_uid"] = parts.str[2]
-    cases["laterality"] = cases["laterality"].str.strip().str.upper()
-    cases["view"] = cases["view"].str.strip().str.upper()
+    # Patient, laterality and view come from the subject ID (e.g. Mass-Training_P_00001_LEFT_CC),
+    # which is what TCIA files the image under. The CSV columns must agree with it.
+    parsed = cases["image_subject"].str.extract(SUBJECT_PATTERN)
+    if parsed.isna().any().any():
+        bad = cases.loc[parsed.isna().any(axis=1), "image_subject"].tolist()
+        raise ValueError(f"unparseable subject IDs, e.g. {bad[:3]}")
+    for col in ("patient_id", "laterality", "view"):
+        csv_values = cases[col].astype(str).str.strip().str.upper()
+        mismatch = csv_values != parsed[col].str.upper()
+        if mismatch.any():
+            examples = cases.loc[mismatch, "image_subject"].tolist()[:3]
+            raise ValueError(
+                f"CSV {col} disagrees with subject ID in {mismatch.sum()} rows: {examples}"
+            )
+        cases[col] = parsed[col]
     cases["pathology"] = cases["pathology"].str.strip().str.upper()
     cases["malignant"] = (cases["pathology"] == "MALIGNANT").astype(int)
     cases["abnormality_uid"] = (
@@ -386,6 +400,13 @@ def build_index(
     )
 
     abn = resolve_files(cases, headers)
+    header_lat = abn["header_laterality"].dropna()
+    disagree = header_lat != abn.loc[header_lat.index, "laterality"].str[0]
+    if disagree.any():
+        log.warning(
+            "DICOM Laterality header disagrees with subject ID for %d lesions (subject ID is used)",
+            int(disagree.sum()),
+        )
     images, abn = build_image_table(abn, dicom_dir, hash_duplicates)
     abn.to_csv(out_dir / "abnormalities.csv", index=False)
     images.to_csv(out_dir / "images.csv", index=False)
