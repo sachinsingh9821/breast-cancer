@@ -1,9 +1,15 @@
-"""Quality-check a preprocessed copy: summary stats and contact sheets with lesion outlines.
+"""Quality-check a preprocessed copy.
 
 Usage:
-    python scripts/qc_preprocessing.py data=cbis_ddsm [qc.subdir=master_2048] [qc.n_images=48]
+    python scripts/qc_preprocessing.py data=cbis_ddsm [qc.subdir=master_2048]
 
-Writes ``<processed_dir>/qc/<subdir>/summary.json`` and ``sheet_XX.png`` files.
+Writes to ``<processed_dir>/qc/<subdir>/``:
+
+* ``summary.json``: geometry/mask statistics and the automatic edge-strip rate.
+* ``flags.csv``: automatic edge-strip flag per image.
+* ``masks_XX.png``: images whose lesion masks needed attention, with mask outlines.
+* ``review_XX.png`` + ``review_sample.csv``: a fixed random sample (numbered tiles) for
+  manual artifact review; fill in the ``edge_strip`` / ``horizontal_line`` columns.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from omegaconf import DictConfig
 
 from breast_cancer.data.dicom_io import normalize_intensity
 from breast_cancer.data.pipeline import read_png
+from breast_cancer.data.qc import QCParams, detect_edge_strip
 
 log = logging.getLogger(__name__)
 
@@ -72,26 +79,53 @@ def main(cfg: DictConfig) -> None:
     (out / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
     log.info("summary: %s", json.dumps(summary, indent=1))
 
-    # random sample plus every lesion whose mask needed attention
-    flagged = lesions.loc[lesions["mask_status"] != "ok", "image_id"].unique().tolist()
-    sample = meta["image_id"].sample(min(cfg.qc.n_images, len(meta)), random_state=cfg.seed)
-    ids = list(dict.fromkeys(flagged + sample.tolist()))
+    params = QCParams(**cfg.qc.detector)
+    flags = meta[["image_id", "view"]].copy()
+    flags["edge_strip_auto"] = [
+        detect_edge_strip(read_png(copy_dir / "images" / f"{i}.png"), params)
+        for i in meta["image_id"]
+    ]
+    flags.to_csv(out / "flags.csv", index=False)
+    summary["edge_strip_auto_frac"] = round(float(flags["edge_strip_auto"].mean()), 4)
+    summary["edge_strip_auto_frac_by_view"] = (
+        flags.groupby("view")["edge_strip_auto"].mean().round(4).to_dict()
+    )
+    (out / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    log.info("automatic edge-strip flags: %d/%d", int(flags["edge_strip_auto"].sum()), len(flags))
+
     masks_of = {k: [p for p in g["mask_path"] if p] for k, g in lesions.groupby("image_id")}
-    per_sheet = cfg.qc.cols * cfg.qc.rows
     size = (cfg.qc.tile_w, cfg.qc.tile_h)
-    for s, start in enumerate(range(0, len(ids), per_sheet)):
-        tiles = []
-        for image_id in ids[start : start + per_sheet]:
-            img = read_png(copy_dir / "images" / f"{image_id}.png")
-            masks = [read_png(copy_dir / p) for p in masks_of.get(image_id, [])]
-            flag = "!" if image_id in flagged else ""
-            tiles.append(tile(img, masks, f"{flag}{image_id}", size))
-        tiles += [np.full((size[1], size[0], 3), 32, np.uint8)] * (per_sheet - len(tiles))
-        rows = [
-            np.hstack(tiles[r * cfg.qc.cols : (r + 1) * cfg.qc.cols]) for r in range(cfg.qc.rows)
-        ]
-        cv2.imwrite(str(out / f"sheet_{s:02d}.png"), np.vstack(rows))
-    log.info("wrote %d contact sheets to %s", -(-len(ids) // per_sheet), out)
+
+    def write_sheets(ids: list[str], prefix: str, outlines: bool) -> None:
+        """Render ``ids`` as numbered tiles into ``<prefix>_XX.png`` contact sheets."""
+        per_sheet = cfg.qc.cols * cfg.qc.rows
+        for s, start in enumerate(range(0, len(ids), per_sheet)):
+            tiles = []
+            for k, image_id in enumerate(ids[start : start + per_sheet], start=start):
+                img = read_png(copy_dir / "images" / f"{image_id}.png")
+                masks = (
+                    [read_png(copy_dir / p) for p in masks_of.get(image_id, [])] if outlines else []
+                )
+                tiles.append(tile(img, masks, f"#{k} {image_id}", size))
+            tiles += [np.full((size[1], size[0], 3), 32, np.uint8)] * (per_sheet - len(tiles))
+            rows = [
+                np.hstack(tiles[r * cfg.qc.cols : (r + 1) * cfg.qc.cols])
+                for r in range(cfg.qc.rows)
+            ]
+            cv2.imwrite(str(out / f"{prefix}_{s:02d}.png"), np.vstack(rows))
+
+    # Lesions whose mask needed attention, with outlines.
+    mask_flagged = lesions.loc[lesions["mask_status"] != "ok", "image_id"].unique().tolist()
+    write_sheets(mask_flagged, "masks", outlines=True)
+    # Fixed random sample for manual artifact review (no outlines, so edges stay visible).
+    sample = meta["image_id"].sample(min(cfg.qc.review_n, len(meta)), random_state=cfg.seed)
+    review = flags.set_index("image_id").loc[sample].reset_index()
+    review.insert(0, "k", range(len(review)))
+    review["edge_strip"] = ""  # filled in by the reviewer
+    review["horizontal_line"] = ""
+    review.to_csv(out / "review_sample.csv", index=False)
+    write_sheets(review["image_id"].tolist(), "review", outlines=False)
+    log.info("wrote mask and review sheets to %s", out)
 
 
 if __name__ == "__main__":

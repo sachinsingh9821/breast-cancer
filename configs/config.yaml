@@ -23,11 +23,16 @@ preprocess:
 # scripts/qc_preprocessing.py
 qc:
   subdir: master_2048 # which preprocessed copy under data.processed_dir to check
-  n_images: 48        # random images (plus every image with a flagged mask)
+  review_n: 300       # fixed random sample rendered for manual artifact review
   cols: 8
   rows: 3
   tile_w: 200
   tile_h: 330
+  detector:           # automatic edge-strip detector (breast_cancer.data.qc)
+    work_long_side: 1024
+    strip_band_frac: 0.04
+    strip_level_frac: 0.95
+    strip_min_frac: 0.3
 
 hydra:
   run:
