@@ -60,6 +60,12 @@ reports/figures/    # plots used in the README
 ## Hardware assumptions
 Training on Kaggle/Colab GPUs (T4/P100, ~16 GB). Use mixed precision (AMP), gradient accumulation, and cached preprocessed PNG/NPY files instead of reading DICOMs during training.
 
+## NOTES (carry into the README)
+- **CBIS-DDSM label definition:** an image (or breast) is positive if it contains a malignant lesion, negative if it contains only benign lesions (BENIGN or BENIGN_WITHOUT_CALLBACK). CBIS-DDSM has **no normal images**: every image has at least one annotated lesion. So the CBIS task is malignant-vs-benign lesion classification, not cancer-vs-normal screening; VinDr-Mammo (which includes normal exams) is the screening-realistic evaluation.
+- **CBIS-DDSM split:** the official test set is kept as the test set. 31 patients appear in both the official train and test sets; their official-train images are dropped (IDs listed in `reports/cbis_ddsm_dropped_overlap_patients.csv`). Validation is carved out of the remaining train patients at the patient level, stratified by patient label × abnormality type (mass/calc/both).
+- **CBIS-DDSM quirks handled in the pipeline:** CSV file names (`00000N.dcm`) don't exist on disk (join on SeriesInstanceUID) and the crop/mask index is unreliable (masks identified by matching the full image's size); `breast density` vs `breast_density` column names; some images listed under both a Mass and a Calc subject (pixel-identical duplicates merged); image orientation doesn't follow laterality (flip decided from the image); saturated scanner strips and film labels (removed during cropping).
+- **Data storage:** the master copy is 16-bit PNG at long side 2048 (`data/processed/cbis_ddsm/master_2048/`); raw DICOMs may be deleted after it is built. Training resolutions (1024, 512) are cached copies derived from the master.
+
 ## Current status
 - [ ] Phase 1: scaffold, data pipeline, splits, baseline
 - [ ] Phase 2: patch classifier → whole-image model
