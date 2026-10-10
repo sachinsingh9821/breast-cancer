@@ -24,6 +24,14 @@ preprocess:
 qc:
   subdir: master_2048 # which preprocessed copy under data.processed_dir to check
   review_n: 300       # fixed random sample rendered for manual artifact review
+  verify:             # blind second review of the manual labels (scripts/qc_verify.py)
+    mode: make        # make | score
+    n: 30
+    max_positive_frac: 0.4
+    cols: 5
+    rows: 2
+    tile_w: 330
+    tile_h: 600
   cols: 8
   rows: 3
   tile_w: 200
