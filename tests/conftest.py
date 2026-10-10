@@ -105,9 +105,8 @@ CALC_COLS = (
 )
 
 
-@pytest.fixture
-def fake_cbis(tmp_path):
-    """A miniature CBIS-DDSM download reproducing the real dataset's quirks.
+def build_fake_cbis(tmp_path: Path) -> Path:
+    """Write a miniature CBIS-DDSM download reproducing the real dataset's quirks.
 
     * P_00001 LEFT CC appears under a Mass and a Calc subject with identical pixels (duplicate).
       Its mass ROI series holds the mask under a wrong "cropped images" description and the
@@ -235,3 +234,13 @@ def fake_cbis(tmp_path):
         (csv_dir / name).write_text("\n".join([header, *rows[table]]) + "\n")
     (root / "series_manifest.json").write_text(json.dumps(manifest))
     return root
+
+
+@pytest.fixture
+def fake_cbis(tmp_path):
+    return build_fake_cbis(tmp_path)
+
+
+@pytest.fixture(scope="module")
+def fake_cbis_module(tmp_path_factory):
+    return build_fake_cbis(tmp_path_factory.mktemp("fake_cbis"))

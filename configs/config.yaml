@@ -13,7 +13,12 @@ paths:
   raw: ${paths.root}/data/raw
   interim: ${paths.root}/data/interim
   processed: ${paths.root}/data/processed
-  figures: ${paths.root}/reports/figures
+  reports: ${paths.root}/reports
+  figures: ${paths.reports}/figures
+
+# scripts/preprocess.py: stages run in this order; override e.g. `preprocess.stages=[index]`
+preprocess:
+  stages: [index, splits, master, derive]
 
 hydra:
   run:

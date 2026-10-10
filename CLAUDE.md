@@ -52,9 +52,9 @@ reports/figures/    # plots used in the README
 
 ## Commands
 - `make setup` (or `.\tasks.ps1 setup` on Windows PowerShell) — install deps + pre-commit hooks; same targets: lint, format, test, train
-- `python scripts/preprocess.py dataset=cbis_ddsm`
+- `python scripts/preprocess.py data=cbis_ddsm` (stages: index, splits, master, derive; e.g. `preprocess.stages=[index,splits]`)
 - `python scripts/train.py experiment=<name>`
-- `python scripts/evaluate.py checkpoint=<path> dataset=vindr`
+- `python scripts/evaluate.py checkpoint=<path> data=vindr`
 - `pytest -q` and `ruff check .` must pass before commit
 
 ## Hardware assumptions
