@@ -137,7 +137,8 @@ def main() -> int:
     done = total - len(todo)
     done_bytes = total_bytes - sum(int(s.get("FileSize", 0)) for s in todo)
     remaining_gb = (total_bytes - done_bytes) / BYTES_PER_GB
-    free_gb = shutil.disk_usage(out).free / BYTES_PER_GB
+    # dicom_dir may be a junction to another drive; measure the drive it actually lives on.
+    free_gb = shutil.disk_usage(dicom_dir).free / BYTES_PER_GB
     log.info(
         "Already complete: %d/%d (%.1f GB). Remaining: %.1f GB. Free disk: %.1f GB.",
         done,
@@ -159,7 +160,7 @@ def main() -> int:
 
     failed: list[dict[str, Any]] = []
     for i in range(0, len(todo), args.batch_size):
-        if shutil.disk_usage(out).free / BYTES_PER_GB < args.min_free_gb:
+        if shutil.disk_usage(dicom_dir).free / BYTES_PER_GB < args.min_free_gb:
             log.error(
                 "Free disk below %.0f GB reserve; stopping. Rerun to resume.", args.min_free_gb
             )
